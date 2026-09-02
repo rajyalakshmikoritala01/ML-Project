@@ -1,0 +1,7 @@
+Cotton Disease Dataset/
+.vscode/
+__pycache__/
+*.pyc
+venv/
+.env
+app/model.h5

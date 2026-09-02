@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cotton Plant Disease Detection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f4f7f6; }
+    .preview-img {
+      max-height: 260px;
+      border-radius: 12px;
+      display: none;
+      margin: auto;
+      border: 1px solid #d9e2dc;
+    }
+    .result-card { display: none; }
+    .loading {
+      display: none;
+      text-align: center;
+      font-weight: 600;
+      color: #0d6e2f;
+    }
+    .progress { height: 18px; }
+    .label-quiet {
+      color: #5f6f65;
+      font-size: 0.93rem;
+    }
+    .fact-box {
+      background: #edf8f0;
+      border: 1px solid #cfe6d5;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .error-text {
+      display: none;
+      color: #bb2d3b;
+      font-weight: 500;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-dark bg-success shadow">
+  <div class="container">
+    <span class="navbar-brand mb-0 h1">Cotton Disease Detection System</span>
+  </div>
+</nav>
+
+<section class="container mt-5 mb-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-9">
+      <div class="card shadow-sm p-4">
+        <h4 class="text-center mb-3">Upload Cotton Leaf Image</h4>
+        <input type="file" id="imageInput" class="form-control mb-3" accept="image/*">
+        <img id="preview" class="preview-img img-fluid">
+        <div class="d-grid mt-4">
+          <button class="btn btn-success btn-lg" onclick="predict()">Predict and Analyze</button>
+        </div>
+        <div class="loading mt-3" id="loadingText">Analyzing image and preparing recommendations...</div>
+        <div class="error-text" id="errorText"></div>
+      </div>
+
+      <div class="card result-card shadow-sm mt-4" id="resultCard">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <h5 class="mb-1">Prediction Result</h5>
+              <h3 class="text-success mb-0" id="resultText"></h3>
+            </div>
+            <span id="confidenceBadge" class="badge text-bg-success fs-6"></span>
+          </div>
+
+          <div class="fact-box mt-3">
+            <div class="fw-semibold mb-1">Crop Analysis</div>
+            <div id="analysisSummary" class="mb-1"></div>
+            <div class="label-quiet" id="analysisMeta"></div>
+          </div>
+
+          <hr>
+          <h5>Class Probabilities</h5>
+          <div id="probabilityContainer"></div>
+
+          <hr>
+          <h5>Immediate Actions</h5>
+          <ul id="immediateList" class="mb-3"></ul>
+
+          <h5>Prevention Actions</h5>
+          <ul id="preventionList" class="mb-3"></ul>
+
+          <h5>Yield Improvement Actions</h5>
+          <ul id="yieldList" class="mb-3"></ul>
+
+          <h5>Model Notes</h5>
+          <ul id="notesList" class="mb-3"></ul>
+
+          <h5>AI Agronomist Report</h5>
+          <div id="aiReport" style="white-space: pre-wrap;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+const imageInput = document.getElementById("imageInput");
+const preview = document.getElementById("preview");
+const resultCard = document.getElementById("resultCard");
+const resultText = document.getElementById("resultText");
+const confidenceBadge = document.getElementById("confidenceBadge");
+const analysisSummary = document.getElementById("analysisSummary");
+const analysisMeta = document.getElementById("analysisMeta");
+const probabilityContainer = document.getElementById("probabilityContainer");
+const immediateList = document.getElementById("immediateList");
+const preventionList = document.getElementById("preventionList");
+const yieldList = document.getElementById("yieldList");
+const notesList = document.getElementById("notesList");
+const aiReport = document.getElementById("aiReport");
+const loadingText = document.getElementById("loadingText");
+const errorText = document.getElementById("errorText");
+
+imageInput.addEventListener("change", () => {
+  const file = imageInput.files[0];
+  if (file) {
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = "block";
+  } else {
+    preview.style.display = "none";
+  }
+});
+
+function renderList(container, items) {
+  container.innerHTML = "";
+  (items || []).forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item;
+    container.appendChild(li);
+  });
+}
+
+function renderProbabilities(probabilityRanking, probabilityMap) {
+  probabilityContainer.innerHTML = "";
+
+  const ranked = Array.isArray(probabilityRanking) && probabilityRanking.length > 0
+    ? probabilityRanking
+    : Object.entries(probabilityMap || {}).map(([class_name, probability]) => ({
+        class_name,
+        probability,
+        percentage: (probability * 100),
+      })).sort((a, b) => b.probability - a.probability);
+
+  ranked.forEach((item, idx) => {
+    const percentage = Number(item.percentage).toFixed(2);
+    const barColor = idx === 0 ? "bg-success" : "bg-secondary";
+    probabilityContainer.innerHTML += `
+      <div class="mb-2">
+        <small>${item.class_name} (${percentage}%)</small>
+        <div class="progress">
+          <div class="progress-bar ${barColor}" role="progressbar"
+            style="width: ${percentage}%"
+            aria-valuenow="${percentage}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+      </div>
+    `;
+  });
+}
+
+async function predict() {
+  const file = imageInput.files[0];
+  if (!file) {
+    alert("Please select an image");
+    return;
+  }
+
+  loadingText.style.display = "block";
+  resultCard.style.display = "none";
+  errorText.style.display = "none";
+  errorText.textContent = "";
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const response = await fetch("/api/predict", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || "Prediction failed");
+    }
+
+    resultText.textContent = data.prediction || "Unknown";
+    confidenceBadge.textContent = `${data.confidence_percent || 0}% (${data.confidence_band || "NA"} confidence)`;
+    analysisSummary.textContent = data.crop_analysis?.summary || "";
+    analysisMeta.textContent = `Part: ${data.crop_analysis?.plant_part || "Unknown"} | Status: ${data.crop_analysis?.health_status || "Unknown"}`;
+
+    renderProbabilities(data.probability_ranking, data.probabilities);
+    renderList(immediateList, data.recommendations?.immediate_actions || []);
+    renderList(preventionList, data.recommendations?.prevention_actions || []);
+    renderList(yieldList, data.recommendations?.yield_actions || []);
+    renderList(notesList, data.model_notes || []);
+
+    aiReport.textContent = data.ai_agronomist_report || "No report generated.";
+    resultCard.style.display = "block";
+  } catch (err) {
+    errorText.style.display = "block";
+    errorText.textContent = err.message;
+  } finally {
+    loadingText.style.display = "none";
+  }
+}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

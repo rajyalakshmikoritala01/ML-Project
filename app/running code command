@@ -1,0 +1,8 @@
+first in cmd : conda activate raji 
+conda info --envs
+code .
+
+VS code
+conda activate raji
+conda info --envs
+ python -m uvicorn app.main:app --reload
